@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  namespace: prodproject
+spec:
+  serviceName: db-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+      - name: db
+        image: docker.io/salwansaied/vroproject:db
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: db-data
+          mountPath: /var/lib/mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: DB_PASSWORD
+        livenessProbe:
+          exec:
+            command: ["mysqladmin", "ping", "-h", "localhost"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command: ["mysql", "-h", "localhost", "-e", "SELECT 1"]
+          initialDelaySeconds: 20
+          periodSeconds: 10
+  volumeClaimTemplates:
+  - metadata:
+      name: db-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: openebs-sc
+      resources:
+        requests:
+          storage: 5Gi
