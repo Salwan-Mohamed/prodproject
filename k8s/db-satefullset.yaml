@@ -3,6 +3,9 @@ kind: StatefulSet
 metadata:
   name: db
   namespace: prodproject
+  labels:
+    app: db
+    tier: database
 spec:
   serviceName: db-headless
   replicas: 1
@@ -13,10 +16,40 @@ spec:
     metadata:
       labels:
         app: db
+        tier: database
     spec:
+      # Optional: Node Selector
+      nodeSelector:
+        disktype: ssd  # Example label, adjust to your cluster
+      
+      # Optional: Tolerations
+      tolerations:
+      - key: "database"
+        operator: "Equal"
+        value: "critical"
+        effect: "NoSchedule"
+      
+      # Init Containers
+      initContainers:
+      - name: volume-permission
+        image: busybox
+        command:
+        - sh
+        - -c
+        - |
+          chown -R 999:999 /var/lib/mysql
+          chmod 755 /var/lib/mysql
+        volumeMounts:
+        - name: db-data
+          mountPath: /var/lib/mysql
+      
       containers:
       - name: db
         image: docker.io/salwansaied/vroproject:db
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3306
+        
         resources:
           requests:
             cpu: 250m
@@ -24,27 +57,48 @@ spec:
           limits:
             cpu: 500m
             memory: 1Gi
-        ports:
-        - containerPort: 3306
-        volumeMounts:
-        - name: db-data
-          mountPath: /var/lib/mysql
+        
         env:
         - name: MYSQL_ROOT_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: app-secrets
-              key: DB_PASSWORD
+              name: db-secrets
+              key: root-password
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: db-name
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: db-user
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: db-password
+        
+        # Enhanced Probes
         livenessProbe:
           exec:
             command: ["mysqladmin", "ping", "-h", "localhost"]
           initialDelaySeconds: 30
           periodSeconds: 10
+          failureThreshold: 3
+        
         readinessProbe:
           exec:
             command: ["mysql", "-h", "localhost", "-e", "SELECT 1"]
           initialDelaySeconds: 20
           periodSeconds: 10
+          failureThreshold: 3
+        
+        volumeMounts:
+        - name: db-data
+          mountPath: /var/lib/mysql
+  
   volumeClaimTemplates:
   - metadata:
       name: db-data
